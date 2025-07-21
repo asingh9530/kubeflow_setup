@@ -334,7 +334,7 @@ if pipeline_id:
     # Upload a new version
     client.upload_pipeline_version(
         pipeline_package_path=pipeline_file,
-        pipeline_version_name="1.1",
+        pipeline_version_name="1.0",
         description="Updated pipeline version",
         pipeline_id=pipeline_id
     )
@@ -345,5 +345,5 @@ else:
         pipeline_name="Molecular Dynamics Pipeline",
         description="Pipeline for setting up and running molecular dynamics simulations"
     )
-    print(f"Created new pipeline with ID: {pipeline.id}")
+    print(f"Created new pipeline with ID: {pipeline.pipeline_id}")
 

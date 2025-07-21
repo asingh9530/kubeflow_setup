@@ -60,7 +60,7 @@ pip install -r requirements.txt
 If port forwarding stops, restart it with:
 
 ```bash
-kubectl port-forward -n kubeflow svc/ml-pipeline-ui 8080:80
+kubectl port-forward -n kubeflow svc/ml-pipeline-ui 8080:80 &
 ```
 
 Check Kubeflow Pipelines pods with:
@@ -73,4 +73,10 @@ Check pod logs:
 
 ```bash
 kubectl logs -n kubeflow pod-name
+```
+
+## Run pipeline
+
+```bash
+python src/iso_pipeline.py
 ```
