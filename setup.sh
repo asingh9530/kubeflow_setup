@@ -1,9 +1,5 @@
-### 4. Optional startup script for the root directory
-
-You could also create a single startup script in the root directory that runs both setup scripts:
-
-```bash
 #!/bin/bash
+
 set -e
 
 # Colors for better output

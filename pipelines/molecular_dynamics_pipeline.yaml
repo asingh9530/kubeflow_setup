@@ -1,0 +1,465 @@
+# PIPELINE DEFINITION
+# Name: molecular-dynamics-pipeline
+# Description: Pipeline for setting up and running molecular dynamics simulations
+# Inputs:
+#    pdb_code: str [Default: '1aki']
+components:
+  comp-create-topology:
+    executorLabel: exec-create-topology
+    inputDefinitions:
+      artifacts:
+        input_pdb:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        output_crd:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_pdb:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_top:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-download-pdb:
+    executorLabel: exec-download-pdb
+    inputDefinitions:
+      parameters:
+        pdb_code:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_pdb_file:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-prepare-pdb:
+    executorLabel: exec-prepare-pdb
+    inputDefinitions:
+      artifacts:
+        input_pdb_file:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        output_prepared_pdb:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-run-minimization:
+    executorLabel: exec-run-minimization
+    inputDefinitions:
+      artifacts:
+        input_crd:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        input_top:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        output_energy_dat:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_log:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_rst:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_traj:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-run-system-minimization:
+    executorLabel: exec-run-system-minimization
+    inputDefinitions:
+      artifacts:
+        input_rst:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        input_top:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        output_energy_dat:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_log:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_rst:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        output_traj:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-create-topology:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - create_topology
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef create_topology(\n    input_pdb: Input[Artifact],\n    output_pdb:\
+          \ Output[Artifact],\n    output_top: Output[Artifact],\n    output_crd:\
+          \ Output[Artifact],\n):\n    \"\"\"Build AMBER topology for the protein\
+          \ structure.\"\"\"\n    from biobb_amber.leap.leap_gen_top import leap_gen_top\n\
+          \    import shutil\n    import subprocess\n    import os\n\n    # Copy input\
+          \ from object storage to local path\n    local_input_pdb = \"input.pdb\"\
+          \n    shutil.copy(input_pdb.path, local_input_pdb)\n    print(f\"Copied\
+          \ input PDB from {input_pdb.path} to {local_input_pdb}\")\n\n    # Define\
+          \ local output paths\n    local_output_pdb = \"output.pdb\"\n    local_output_top\
+          \ = \"system.top\"\n    local_output_crd = \"system.crd\"\n\n    # Set forcefield\
+          \ properties\n    prop = {\"forcefield\": [\"protein.ff14SB\"]}\n\n    #\
+          \ Run topology generation\n    leap_gen_top(\n        input_pdb_path=local_input_pdb,\n\
+          \        output_pdb_path=local_output_pdb,\n        output_top_path=local_output_top,\n\
+          \        output_crd_path=local_output_crd,\n        properties=prop,\n \
+          \   )\n\n    # Copy results back to object storage\n    shutil.copy(local_output_pdb,\
+          \ output_pdb.path)\n    shutil.copy(local_output_top, output_top.path)\n\
+          \    shutil.copy(local_output_crd, output_crd.path)\n\n    print(f\"Created\
+          \ system topology files:\")\n    print(f\"  PDB: {output_pdb.path}\")\n\
+          \    print(f\"  TOP: {output_top.path}\")\n    print(f\"  CRD: {output_crd.path}\"\
+          )\n\n"
+        image: quay.io/biocontainers/biobb_amber:4.2.0--pyhdfd78af_0
+    exec-download-pdb:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - download_pdb
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'biobb-io==4.2.0'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef download_pdb(pdb_code: str, output_pdb_file: Output[Artifact]):\n\
+          \    \"\"\"Download a PDB structure from RCSB PDB database.\"\"\"\n    from\
+          \ biobb_io.api.pdb import pdb\n    import os\n    import shutil\n\n    #\
+          \ Let biobb create the files in the current directory\n    temp_pdb_path\
+          \ = f\"{pdb_code}.pdb\"\n    prop = {\"pdb_code\": pdb_code}\n\n    # Run\
+          \ the PDB download\n    pdb(output_pdb_path=temp_pdb_path, properties=prop)\n\
+          \n    # Copy the PDB file to the KFP-provided output location\n    shutil.copy(temp_pdb_path,\
+          \ output_pdb_file.path)\n\n    print(f\"Downloaded PDB structure for {pdb_code}\"\
+          )\n    print(f\"Files created: {os.listdir('.')}\")\n    print(f\"Copied\
+          \ main PDB file to: {output_pdb_file.path}\")\n\n"
+        image: quay.io/biocontainers/biobb_amber:4.2.0--pyhdfd78af_0
+    exec-prepare-pdb:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - prepare_pdb
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef prepare_pdb(input_pdb_file: Input[Artifact], output_prepared_pdb:\
+          \ Output[Artifact]):\n    \"\"\"Prepare PDB file for AMBER using pdb4amber\
+          \ tool.\"\"\"\n    import shutil\n    import os\n    import subprocess\n\
+          \n    # Check if pdb4amber is available\n    print(\"Verifying pdb4amber\
+          \ installation:\")\n    subprocess.run([\"which\", \"pdb4amber\"], check=True)\n\
+          \n    # Copy the input file from Minio to a local path\n    local_input_path\
+          \ = \"input.pdb\"\n    shutil.copy(input_pdb_file.path, local_input_path)\n\
+          \    print(f\"Copied input file from {input_pdb_file.path} to {local_input_path}\"\
+          )\n\n    # Use a local output path\n    local_output_path = \"output.pdb\"\
+          \n\n    # Run the preparation using biobb\n    from biobb_amber.pdb4amber.pdb4amber_run\
+          \ import pdb4amber_run\n\n    pdb4amber_run(input_pdb_path=local_input_path,\
+          \ output_pdb_path=local_output_path)\n    print(f\"Generated prepared PDB\
+          \ file at: {local_output_path}\")\n\n    # Copy the result to the KFP output\
+          \ location\n    shutil.copy(local_output_path, output_prepared_pdb.path)\n\
+          \    print(f\"Copied prepared PDB from {local_output_path} to {output_prepared_pdb.path}\"\
+          )\n\n"
+        image: quay.io/biocontainers/biobb_amber:4.2.0--pyhdfd78af_0
+    exec-run-minimization:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - run_minimization
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef run_minimization(\n    input_top: Input[Artifact],\n    input_crd:\
+          \ Input[Artifact],\n    output_traj: Output[Artifact],\n    output_rst:\
+          \ Output[Artifact],\n    output_log: Output[Artifact],\n    output_energy_dat:\
+          \ Output[Artifact],\n):\n    \"\"\"Run AMBER Sander minimization with restraints\
+          \ on non-hydrogen atoms.\"\"\"\n    from biobb_amber.sander.sander_mdrun\
+          \ import sander_mdrun\n    from biobb_amber.process.process_minout import\
+          \ process_minout\n    import shutil\n    import os\n\n    # Copy input files\
+          \ from object storage to local paths\n    local_top_path = \"system.top\"\
+          \n    local_crd_path = \"system.crd\"\n\n    shutil.copy(input_top.path,\
+          \ local_top_path)\n    shutil.copy(input_crd.path, local_crd_path)\n   \
+          \ print(f\"Copied input files: TOP={local_top_path}, CRD={local_crd_path}\"\
+          )\n\n    # Define local output paths\n    local_traj_path = \"sander.h_min.x\"\
+          \n    local_rst_path = \"sander.h_min.rst\"\n    local_log_path = \"sander.h_min.log\"\
+          \n\n    # Set up minimization parameters\n    prop = {\n        \"simulation_type\"\
+          : \"min_vacuo\",\n        \"mdin\": {\n            \"maxcyc\": 500,\n  \
+          \          \"ntpr\": 5,\n            \"ntr\": 1,\n            \"restraintmask\"\
+          : '\":*&!@H=\"',\n            \"restraint_wt\": 50.0,\n        },\n    }\n\
+          \n    # Run minimization\n    print(\"Starting AMBER minimization...\")\n\
+          \    sander_mdrun(\n        input_top_path=local_top_path,\n        input_crd_path=local_crd_path,\n\
+          \        input_ref_path=local_crd_path,  # Using input coords as reference\n\
+          \        output_traj_path=local_traj_path,\n        output_rst_path=local_rst_path,\n\
+          \        output_log_path=local_log_path,\n        properties=prop,\n   \
+          \ )\n    print(\"Minimization completed successfully\")\n\n    # Process\
+          \ minimization log to extract energies\n    local_energy_dat_path = \"sander.h_min.energy.dat\"\
+          \n\n    energy_prop = {\"terms\": [\"ENERGY\"]}\n\n    # Process minimization\
+          \ output\n    process_minout(\n        input_log_path=local_log_path,\n\
+          \        output_dat_path=local_energy_dat_path,\n        properties=energy_prop,\n\
+          \    )\n    print(\"Energy data extraction completed\")\n\n    # Copy results\
+          \ to output artifacts\n    #shutil.copy(local_traj_path, output_traj.path)\n\
+          \    shutil.copy(local_rst_path, output_rst.path)\n    shutil.copy(local_log_path,\
+          \ output_log.path)\n    shutil.copy(local_energy_dat_path, output_energy_dat.path)\n\
+          \n    print(\"Minimization outputs:\")\n    print(f\"  Trajectory: {output_traj.path}\"\
+          )\n    print(f\"  Restart: {output_rst.path}\")\n    print(f\"  Log: {output_log.path}\"\
+          )\n    print(f\"  Energy data: {output_energy_dat.path}\")\n\n"
+        image: quay.io/biocontainers/biobb_amber:4.2.0--pyhdfd78af_0
+    exec-run-system-minimization:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - run_system_minimization
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef run_system_minimization(input_top: Input[Artifact],\n       \
+          \                   input_rst: Input[Artifact],  # Restart file from previous\
+          \ minimization\n                          output_traj: Output[Artifact],\n\
+          \                          output_rst: Output[Artifact],\n             \
+          \             output_log: Output[Artifact],\n                          output_energy_dat:\
+          \ Output[Artifact]):\n    \"\"\"Run second AMBER Sander minimization using\
+          \ restart from first minimization.\"\"\"\n    from biobb_amber.sander.sander_mdrun\
+          \ import sander_mdrun\n    from biobb_amber.process.process_minout import\
+          \ process_minout\n    import shutil\n    import os\n\n    # Copy input files\
+          \ from object storage to local paths\n    local_top_path = \"system.top\"\
+          \n    local_rst_path = \"previous_min.rst\"  # Restart file from previous\
+          \ minimization\n\n    shutil.copy(input_top.path, local_top_path)\n    shutil.copy(input_rst.path,\
+          \ local_rst_path)\n    print(f\"Copied input files: TOP={local_top_path},\
+          \ RST={local_rst_path}\")\n\n    # Define local output paths\n    local_traj_path\
+          \ = \"sander.n_min.x\"\n    local_rst_path_out = \"sander.n_min.rst\"\n\
+          \    local_log_path = \"sander.n_min.log\"\n\n    # Set up minimization\
+          \ parameters\n    prop = {\n        'simulation_type': \"min_vacuo\",\n\
+          \        \"mdin\": { \n            'maxcyc': 500,\n            'ntpr': 5,\n\
+          \            'ntr': 1,\n            'restraintmask': '\\\":*&!@H=\\\"',\n\
+          \            'restraint_wt': 50.0\n        }\n    }\n\n    # Run minimization\n\
+          \    print(\"Starting system minimization...\")\n    sander_mdrun(input_top_path=local_top_path,\n\
+          \               input_crd_path=local_rst_path,  # Using restart from previous\
+          \ min\n               input_ref_path=local_rst_path,  # Using restart from\
+          \ previous min as reference\n               output_traj_path=local_traj_path,\n\
+          \               output_rst_path=local_rst_path_out,\n               output_log_path=local_log_path,\n\
+          \               properties=prop)\n    print(\"System minimization completed\
+          \ successfully\")\n\n    # Process minimization log to extract energies\n\
+          \    local_energy_dat_path = \"sander.n_min.energy.dat\"\n\n    energy_prop\
+          \ = {\n        \"terms\": ['ENERGY']\n    }\n\n    # Process minimization\
+          \ output\n    process_minout(input_log_path=local_log_path,\n          \
+          \       output_dat_path=local_energy_dat_path,\n                 properties=energy_prop)\n\
+          \    print(\"Energy data extraction completed\")\n\n    # Copy results to\
+          \ output artifacts\n    #shutil.copy(local_traj_path, output_traj.path)\n\
+          \    shutil.copy(local_rst_path_out, output_rst.path)\n    shutil.copy(local_log_path,\
+          \ output_log.path)\n    shutil.copy(local_energy_dat_path, output_energy_dat.path)\n\
+          \n    print(\"System minimization outputs:\")\n    print(f\"  Trajectory:\
+          \ {output_traj.path}\")\n    print(f\"  Restart: {output_rst.path}\")\n\
+          \    print(f\"  Log: {output_log.path}\")\n    print(f\"  Energy data: {output_energy_dat.path}\"\
+          )\n\n"
+        image: quay.io/biocontainers/biobb_amber:4.2.0--pyhdfd78af_0
+pipelineInfo:
+  description: Pipeline for setting up and running molecular dynamics simulations
+  name: molecular-dynamics-pipeline
+root:
+  dag:
+    tasks:
+      create-topology:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-create-topology
+        dependentTasks:
+        - prepare-pdb
+        inputs:
+          artifacts:
+            input_pdb:
+              taskOutputArtifact:
+                outputArtifactKey: output_prepared_pdb
+                producerTask: prepare-pdb
+        taskInfo:
+          name: create-topology
+      download-pdb:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-download-pdb
+        inputs:
+          parameters:
+            pdb_code:
+              componentInputParameter: pdb_code
+        taskInfo:
+          name: download-pdb
+      prepare-pdb:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-prepare-pdb
+        dependentTasks:
+        - download-pdb
+        inputs:
+          artifacts:
+            input_pdb_file:
+              taskOutputArtifact:
+                outputArtifactKey: output_pdb_file
+                producerTask: download-pdb
+        taskInfo:
+          name: prepare-pdb
+      run-minimization:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-run-minimization
+        dependentTasks:
+        - create-topology
+        inputs:
+          artifacts:
+            input_crd:
+              taskOutputArtifact:
+                outputArtifactKey: output_crd
+                producerTask: create-topology
+            input_top:
+              taskOutputArtifact:
+                outputArtifactKey: output_top
+                producerTask: create-topology
+        taskInfo:
+          name: run-minimization
+      run-system-minimization:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-run-system-minimization
+        dependentTasks:
+        - create-topology
+        - run-minimization
+        inputs:
+          artifacts:
+            input_rst:
+              taskOutputArtifact:
+                outputArtifactKey: output_rst
+                producerTask: run-minimization
+            input_top:
+              taskOutputArtifact:
+                outputArtifactKey: output_top
+                producerTask: create-topology
+        taskInfo:
+          name: run-system-minimization
+  inputDefinitions:
+    parameters:
+      pdb_code:
+        defaultValue: 1aki
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.13.0
